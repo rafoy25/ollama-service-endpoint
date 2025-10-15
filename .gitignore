@@ -1,0 +1,49 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+*.egg-info/
+dist/
+build/
+
+# OpenVINO Models (Large files - regenerate on deployment)
+models/
+*.xml
+*.bin
+*.onnx
+traced_model.pt
+
+# HuggingFace Cache (Downloads from internet)
+.cache/
+~/.cache/huggingface/
+
+# Environment variables
+.env
+.env.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Docker
+.dockerignore
+docker-compose.override.yml

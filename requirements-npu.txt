@@ -1,0 +1,25 @@
+# Core FastAPI dependencies
+fastapi==0.119.0
+uvicorn==0.37.0
+httpx==0.28.1
+pydantic==2.12.2
+requests==2.32.5
+
+# OpenVINO for NPU/iGPU acceleration
+openvino==2025.3.0
+openvino-telemetry==2025.2.0
+
+# HuggingFace transformers
+transformers==4.57.1
+tokenizers==0.22.1
+huggingface-hub==0.35.3
+
+# PyTorch (CPU version for model conversion)
+torch==2.9.0
+
+# ONNX tools (for model conversion)
+onnx==1.19.1
+onnxscript==0.5.3
+
+# Utilities
+numpy==2.2.6
