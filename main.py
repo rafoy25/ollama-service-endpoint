@@ -41,14 +41,13 @@ async def health_check():
 async def list_models():
     try:
         response = requests.get("http://localhost:11434/api/tags")
-
+        response.raise_for_status()
+        
         response_data = response.json()
         if "error" in response_data:
-            raise HTTPException(statuse_code=404, detail=response_data["error"])
-        else:
-            pass
-
-        return response.json()
+            raise HTTPException(status_code=404, detail=response_data["error"])
+        
+        return response_data
     except requests.HTTPError as e:
         raise HTTPException(status_code=e.response.status_code, detail="HTTP error from model service")
     except requests.RequestException as e:
@@ -58,7 +57,13 @@ async def list_models():
 async def running_models():
     try:
         response = requests.get(f"{url}/api/ps")
-        return response.json()
+        response.raise_for_status()
+        
+        response_data = response.json()
+        if "error" in response_data:
+            raise HTTPException(status_code=404, detail=response_data["error"])
+        
+        return response_data
     except requests.HTTPError as e:
         raise HTTPException(status_code=e.response.status_code, detail="HTTP error from model service")
     except requests.RequestException as e:
@@ -69,12 +74,14 @@ async def running_models():
 async def generate_embeddings(embeddings: EmbeddingsRequest):
     try:
         async with httpx.AsyncClient() as client:
-            response = await client.post(f"{url}/api/embed", json=embeddings.dict(), timeout=None)
+            response = await client.post(f"{url}/api/embed", json=embeddings.dict(), timeout=60)
+            response.raise_for_status()
+            
             response_data = response.json()
-
             if "error" in response_data:
-                raise HTTPException(status_code=404, detail=response_data["error"])
-            return response.json()
+                raise HTTPException(status_code=400, detail=response_data["error"])
+            
+            return response_data
         
     except httpx.HTTPStatusError as e:
         raise HTTPException(status_code=e.response.status_code, detail="Error from embeddings service")
@@ -86,19 +93,22 @@ async def generate_embeddings(embeddings: EmbeddingsRequest):
 
 @app.post("/api/prompts")
 async def create_prompt(prompts: PromptsRequest):
-    async with httpx.AsyncClient() as client:
-        try:
-            response = await client.post(f"{url}/api/generate", json=prompts.dict(), timeout=None)
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.post(f"{url}/api/generate", json=prompts.dict(), timeout=60)
+            response.raise_for_status()
+            
             response_data = response.json()
-
             if "error" in response_data:
-                raise HTTPException(status_code=404, detail=response_data["error"])
-            return response.json()
+                raise HTTPException(status_code=400, detail=response_data["error"])
+            
+            return response_data
         
-        except httpx.HTTPStatusError as e:
-            raise HTTPException(status_code=e.response.status_code, detail="Error from generation service")
-        except httpx.RequestError as e:
-            raise HTTPException(status_code=500, detail=f"Request failed: {str(e)}")
+    except httpx.HTTPStatusError as e:
+        print(e)
+        raise HTTPException(status_code=e.response.status_code, detail="Error from generation service")
+    except httpx.RequestError as e:
+        raise HTTPException(status_code=500, detail=f"Request failed: {str(e)}")
 
 if __name__ == "__main__":
     import uvicorn

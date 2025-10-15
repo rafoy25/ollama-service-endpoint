@@ -97,7 +97,25 @@ All endpoints follow similar error handling:
 
 ## Timeout Configuration
 
-- Prompt generation: `timeout=None` (unlimited)
-- Embeddings: `timeout=None` (unlimited)
+- Prompt generation: 60s timeout (configurable in [main.py](main.py:98))
+- Embeddings: 60s timeout (configurable in [main.py](main.py:77))
 - Load test prompts: 60s timeout
 - Load test embeddings: 30s timeout
+
+## Important Notes
+
+### Request/Response Models
+- `PromptsRequest`: Pydantic model for chat/completion requests (model, prompt, stream flag)
+- `EmbeddingsRequest`: Pydantic model for embedding requests (model, input list)
+- Default chat model: `llama3`
+- Default embedding model: `mxbai-embed-large` (first in `embedding_models` list)
+
+### HTTP Client Usage Pattern
+- `httpx.AsyncClient`: Used for async POST requests (prompts, embeddings)
+- `requests`: Used for sync GET requests (list_models, running_models)
+- All Ollama responses are checked for `"error"` key before returning
+
+### Error Response Codes
+- 400: Ollama returned an error in response JSON
+- 404: Model not found or error from model service
+- 500: Connection error or request failure

@@ -1,0 +1,192 @@
+"""
+NPU-Accelerated Embedding Service using OpenVINO
+With STATIC SHAPE support for NPU compatibility
+Thread-safe for concurrent async requests
+"""
+import openvino as ov
+from transformers import AutoTokenizer
+from typing import List
+import numpy as np
+import logging
+import asyncio
+from concurrent.futures import ThreadPoolExecutor
+import threading
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+
+class NPUEmbeddingServiceStatic:
+    """Embedding service with static shapes for NPU compatibility"""
+
+    def __init__(self, model_name: str = "mixedbread-ai/mxbai-embed-large-v1", max_workers: int = 8):
+        self.model_name = model_name
+        self.core = ov.Core()
+        self.compiled_model = None
+        self.tokenizer = None
+        self.device = None
+        self.model_loaded = False
+        # Thread pool for async execution
+        self.executor = ThreadPoolExecutor(max_workers=max_workers)
+        # Lock for thread-safe tokenizer access
+        self._lock = threading.Lock()
+        # Static shape configuration
+        self.max_seq_length = 512
+        self.batch_size = 1
+
+    def _select_device(self) -> str:
+        """Select best available device: NPU > GPU > CPU"""
+        devices = self.core.available_devices
+
+        # Priority order
+        if "NPU" in devices:
+            logger.info("[NPU] Using Intel NPU (AI Boost)")
+            return "NPU"
+        elif "GPU" in devices:
+            logger.info("[iGPU] Using Intel iGPU")
+            return "GPU"
+        else:
+            logger.info("[CPU] Using CPU")
+            return "CPU"
+
+    def load_model(self, model_path: str):
+        """Load OpenVINO IR model with static shapes"""
+        try:
+            self.device = self._select_device()
+
+            # Load tokenizer
+            logger.info(f"Loading tokenizer for {self.model_name}...")
+            # Tokenizer is in same directory as model
+            tokenizer_path = str(Path(model_path).parent)
+            self.tokenizer = AutoTokenizer.from_pretrained(tokenizer_path)
+
+            # Load and compile OpenVINO model
+            logger.info(f"Loading OpenVINO model from {model_path}...")
+            model = self.core.read_model(model_path)
+
+            # Check model shapes
+            logger.info("Model input shapes:")
+            for input_layer in model.inputs:
+                logger.info(f"  {input_layer.any_name}: {input_layer.shape}")
+                # Extract static dimensions
+                shape = input_layer.shape
+                if len(shape) == 2:
+                    self.batch_size = int(shape[0])
+                    self.max_seq_length = int(shape[1])
+
+            logger.info(f"Static configuration: batch={self.batch_size}, seq_len={self.max_seq_length}")
+
+            # Compile for NPU/GPU/CPU
+            logger.info(f"Compiling model for {self.device}...")
+
+            # For NPU, may need specific config
+            config = {}
+            if self.device == "NPU":
+                # NPU-specific optimizations
+                config = {
+                    "NPU_COMPILATION_MODE_PARAMS": "compute-layers-with-higher-precision=Sqrt,Power,ReduceMean,Add_ReLU"
+                }
+
+            self.compiled_model = self.core.compile_model(model, self.device, config)
+
+            self.model_loaded = True
+            logger.info(f"[SUCCESS] Model loaded on {self.device}")
+
+        except Exception as e:
+            logger.error(f"[ERROR] Failed to load model: {e}")
+            raise
+
+    def _embed_sync(self, texts: List[str]) -> List[List[float]]:
+        """Synchronous embedding generation with static shapes"""
+        if not self.model_loaded:
+            raise RuntimeError("Model not loaded. Call load_model() first.")
+
+        try:
+            # Tokenize with thread lock
+            with self._lock:
+                encoded = self.tokenizer(
+                    texts,
+                    padding='max_length',  # Pad to max_length
+                    truncation=True,
+                    max_length=self.max_seq_length,
+                    return_tensors="np"
+                )
+
+            # Process each text individually due to batch_size=1
+            all_embeddings = []
+
+            for i in range(len(texts)):
+                # Extract single example
+                input_ids = encoded["input_ids"][i:i+1]  # Shape: [1, 512]
+                attention_mask = encoded["attention_mask"][i:i+1]  # Shape: [1, 512]
+
+                # Verify shapes match model expectations
+                assert input_ids.shape == (self.batch_size, self.max_seq_length), \
+                    f"Input shape mismatch: {input_ids.shape} vs expected ({self.batch_size}, {self.max_seq_length})"
+
+                # Create inputs (ordered list for traced model)
+                inputs = [input_ids, attention_mask]
+
+                # OpenVINO inference
+                result = self.compiled_model(inputs)
+
+                # Get embeddings from output
+                output_keys = list(result.keys())
+                embeddings = result[output_keys[0]]  # Shape: [1, 512, 1024]
+
+                # Mean pooling (single example)
+                mask_expanded = np.expand_dims(attention_mask, axis=-1)  # [1, 512, 1]
+                sum_embeddings = np.sum(embeddings * mask_expanded, axis=1)  # [1, 1024]
+                sum_mask = np.clip(np.sum(mask_expanded, axis=1), a_min=1e-9, a_max=None)  # [1, 1]
+                embedding_mean = sum_embeddings / sum_mask  # [1, 1024]
+
+                # Normalize
+                embedding_normalized = embedding_mean / np.linalg.norm(embedding_mean, axis=1, keepdims=True)
+
+                all_embeddings.append(embedding_normalized[0].tolist())  # Extract [1024] array
+
+            return all_embeddings
+
+        except Exception as e:
+            logger.error(f"[ERROR] Embedding generation failed: {e}")
+            raise
+
+    def embed(self, texts: List[str]) -> List[List[float]]:
+        """Generate embeddings (synchronous, for backwards compatibility)"""
+        return self._embed_sync(texts)
+
+    async def embed_async(self, texts: List[str]) -> List[List[float]]:
+        """Generate embeddings asynchronously (non-blocking for concurrent requests)"""
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(self.executor, self._embed_sync, texts)
+
+    def get_device_info(self) -> dict:
+        """Get information about the device being used"""
+        if not self.device:
+            self.device = self._select_device()
+
+        device_name = self.core.get_property(self.device, "FULL_DEVICE_NAME")
+
+        return {
+            "device": self.device,
+            "device_name": device_name,
+            "model_loaded": self.model_loaded,
+            "available_devices": self.core.available_devices,
+            "static_shapes": True,
+            "batch_size": self.batch_size,
+            "max_seq_length": self.max_seq_length
+        }
+
+
+# For compatibility, import Path
+from pathlib import Path
+
+# Singleton instance
+_embedding_service = None
+
+def get_embedding_service() -> NPUEmbeddingServiceStatic:
+    """Get or create singleton embedding service"""
+    global _embedding_service
+    if _embedding_service is None:
+        _embedding_service = NPUEmbeddingServiceStatic()
+    return _embedding_service
