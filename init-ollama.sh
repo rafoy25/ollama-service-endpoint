@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/sh
 # Ollama initialization script - pulls required models on first startup
 
 set -e
@@ -22,11 +22,8 @@ echo ""
 echo "Models to pull: $MODELS_TO_PULL"
 echo "================================================"
 
-# Convert space-separated string to array
-IFS=' ' read -ra MODELS <<< "$MODELS_TO_PULL"
-
-# Pull each model if not already present
-for model in "${MODELS[@]}"; do
+# Pull each model if not already present (POSIX-compliant)
+for model in $MODELS_TO_PULL; do
     echo ""
     echo "Checking model: $model"
 

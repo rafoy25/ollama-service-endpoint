@@ -46,11 +46,11 @@ services:
         condition: service_healthy
     volumes:
       - ./init-ollama.sh:/init-ollama.sh
-    entrypoint: ["/bin/bash", "/init-ollama.sh"]
+    entrypoint: ["/bin/sh", "/init-ollama.sh"]
     environment:
       - OLLAMA_HOST=http://ollama:11434
       # Models to pull (space-separated)
-      - OLLAMA_MODELS=${OLLAMA_MODELS:-llama3 mxbai-embed-large nomic-embed-text all-minilm}
+      - OLLAMA_MODELS=${OLLAMA_MODELS:-gemma3:4b mxbai-embed-large}
     restart: "no"  # Run once only
 
   # FastAPI proxy service
