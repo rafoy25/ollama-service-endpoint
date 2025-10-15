@@ -1,9 +1,11 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 import requests
 import httpx
 import os
+import json
 
 # Ollama URL - configurable via environment variable for Docker deployment
 # Default: http://ollama:11434 (Docker service name)
@@ -79,15 +81,15 @@ async def running_models():
 async def generate_embeddings(embeddings: EmbeddingsRequest):
     try:
         async with httpx.AsyncClient() as client:
-            response = await client.post(f"{url}/api/embed", json=embeddings.dict(), timeout=60)
+            response = await client.post(f"{url}/api/embed", json=embeddings.model_dump(), timeout=60)
             response.raise_for_status()
-            
+
             response_data = response.json()
             if "error" in response_data:
                 raise HTTPException(status_code=400, detail=response_data["error"])
-            
+
             return response_data
-        
+
     except httpx.HTTPStatusError as e:
         raise HTTPException(status_code=e.response.status_code, detail="Error from embeddings service")
     except httpx.RequestError as e:
@@ -99,18 +101,45 @@ async def generate_embeddings(embeddings: EmbeddingsRequest):
 @app.post("/api/prompts")
 async def create_prompt(prompts: PromptsRequest):
     try:
-        async with httpx.AsyncClient() as client:
-            response = await client.post(f"{url}/api/generate", json=prompts.dict(), timeout=60)
-            response.raise_for_status()
-            
-            response_data = response.json()
-            if "error" in response_data:
-                raise HTTPException(status_code=400, detail=response_data["error"])
-            
-            return response_data
-        
+        async with httpx.AsyncClient(timeout=300.0) as client:
+            # If streaming is requested, return a streaming response
+            if prompts.stream:
+                response = await client.post(
+                    f"{url}/api/generate",
+                    json=prompts.model_dump(),
+                    timeout=None
+                )
+                response.raise_for_status()
+
+                # Return streaming response
+                async def generate():
+                    async for chunk in response.aiter_bytes():
+                        yield chunk
+
+                return StreamingResponse(
+                    generate(),
+                    media_type="application/x-ndjson",
+                    headers={
+                        "Cache-Control": "no-cache",
+                        "Connection": "keep-alive",
+                    }
+                )
+            else:
+                # Non-streaming response
+                response = await client.post(
+                    f"{url}/api/generate",
+                    json=prompts.model_dump(),
+                    timeout=60
+                )
+                response.raise_for_status()
+
+                response_data = response.json()
+                if "error" in response_data:
+                    raise HTTPException(status_code=400, detail=response_data["error"])
+
+                return response_data
+
     except httpx.HTTPStatusError as e:
-        print(e)
         raise HTTPException(status_code=e.response.status_code, detail="Error from generation service")
     except httpx.RequestError as e:
         raise HTTPException(status_code=500, detail=f"Request failed: {str(e)}")
