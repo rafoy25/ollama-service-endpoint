@@ -3,9 +3,14 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import requests
 import httpx
+import os
 
-url = "http://localhost:11434"
-app = FastAPI()
+# Ollama URL - configurable via environment variable for Docker deployment
+# Default: http://ollama:11434 (Docker service name)
+# Override: Set OLLAMA_URL environment variable
+url = os.getenv("OLLAMA_URL", "http://localhost:11434")
+
+app = FastAPI(title="Ollama Proxy API", version="1.0.0")
 
 CORSMiddleware_settings = {
     "allow_origins": ["*"],
@@ -16,12 +21,12 @@ CORSMiddleware_settings = {
 
 app.add_middleware(CORSMiddleware, **CORSMiddleware_settings)
 
-embedding_models = ["mxbai-embed-large", "nomic-embed-text", "all-minilm"]
+embedding_models = ["mxbai-embed-large"]
 
 class PromptsRequest(BaseModel):
-    model : str = "llama3"
+    model : str = "gemma3:4b"
     prompt : str
-    stream : bool = False
+    stream : bool = True
 
 class EmbeddingsRequest(BaseModel):
     model: str = embedding_models[0]
@@ -40,7 +45,7 @@ async def health_check():
 @app.get("/api/list_models")
 async def list_models():
     try:
-        response = requests.get("http://localhost:11434/api/tags")
+        response = requests.get(f"{url}/api/tags")
         response.raise_for_status()
         
         response_data = response.json()

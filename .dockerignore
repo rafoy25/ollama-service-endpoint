@@ -1,0 +1,71 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Virtual environments
+venv/
+env/
+ENV/
+.venv
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Git
+.git/
+.gitignore
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Documentation
+*.md
+!README.md
+
+# Docker
+Dockerfile
+docker-compose*.yml
+.dockerignore
+
+# Test files
+test*.py
+*_test.py
+locustfile.py
+run_load_test.py
+requirements-locust.txt
+
+# NPU files (not used in main service)
+npu/
+convert_model_for_npu.py
+npu_embedding_service_static.py
+test_npu_static.py
+
+# Backup files
+main copy*.py
+
+# Models and data
+models/
+*.pt
+*.pth
+*.onnx
+*.xml
+*.bin
+
+# Logs
+*.log
+
+# OS
+.DS_Store
+Thumbs.db

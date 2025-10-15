@@ -1,0 +1,100 @@
+services:
+  # Ollama service with GPU support
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ollama-proxy
+    restart: unless-stopped
+
+    # GPU configuration for NVIDIA
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+    # Volumes for persistent model storage
+    volumes:
+      - ollama-data:/root/.ollama
+
+    # Expose Ollama API port (for debugging/testing)
+    ports:
+      - "11434:11434"
+
+    # Connect to custom network
+    networks:
+      - ollama-network
+
+    # Health check to ensure Ollama is ready
+    healthcheck:
+      test: ["CMD-SHELL", "ollama list || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+
+  # Model initialization service (runs once to pull models)
+  ollama-init:
+    image: ollama/ollama:latest
+    container_name: ollama-init
+    networks:
+      - ollama-network
+    depends_on:
+      ollama:
+        condition: service_healthy
+    volumes:
+      - ./init-ollama.sh:/init-ollama.sh
+    entrypoint: ["/bin/bash", "/init-ollama.sh"]
+    environment:
+      - OLLAMA_HOST=http://ollama:11434
+      # Models to pull (space-separated)
+      - OLLAMA_MODELS=${OLLAMA_MODELS:-llama3 mxbai-embed-large nomic-embed-text all-minilm}
+    restart: "no"  # Run once only
+
+  # FastAPI proxy service
+  fastapi:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: fastapi-proxy
+    restart: unless-stopped
+
+    # Wait for Ollama to be healthy and models to be initialized
+    depends_on:
+      ollama:
+        condition: service_healthy
+      ollama-init:
+        condition: service_completed_successfully
+
+    # Environment variables
+    environment:
+      - OLLAMA_URL=http://ollama:11434
+
+    # Expose FastAPI port to host
+    ports:
+      - "8000:8000"
+
+    # Connect to custom network
+    networks:
+      - ollama-network
+
+    # Health check for FastAPI
+    healthcheck:
+      test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:8000/api/health').raise_for_status()"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+# Custom bridge network for service communication
+networks:
+  ollama-network:
+    driver: bridge
+    name: ollama-network
+
+# Named volume for Ollama data persistence
+volumes:
+  ollama-data:
+    name: ollama-data
