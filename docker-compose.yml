@@ -54,11 +54,13 @@ services:
     restart: "no"  # Run once only
 
   # FastAPI proxy service
+  # Access via: http://localhost:8000 or http://ollama-api.local:8000 (with hosts file)
   fastapi:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: fastapi-proxy
+    container_name: ollama-api
+    hostname: ollama-api
     restart: unless-stopped
 
     # Wait for Ollama to be healthy and models to be initialized
