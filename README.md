@@ -261,25 +261,3 @@ python run_load_test.py
 # Open http://localhost:8089
 ```
 
-## Documentation
-
-- [CLAUDE.md](CLAUDE.md) - Architecture and development guide
-- [DOCKER_DEPLOYMENT.md](DOCKER_DEPLOYMENT.md) - Detailed Docker deployment guide
-- [ollama-gpu-guide.md](ollama-gpu-guide.md) - GPU setup instructions
-
-## Exposed Ports
-
-- `8000` - FastAPI (for clients and external services)
-- `11434` - Ollama (for debugging, can be removed in production)
-
-## Security Notes
-
-For production:
-1. Remove Ollama's exposed port
-2. Restrict CORS origins in `main.py`
-3. Add API authentication
-4. Use HTTPS reverse proxy (nginx/traefik)
-
-## License
-
-[Your License Here]
